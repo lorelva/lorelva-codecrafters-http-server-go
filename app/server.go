@@ -43,6 +43,7 @@ func handleConnection(conn net.Conn) {
 	pathFile := strings.Split(lines[0], " ")[1]
 	acceptEncoding := ""
 
+	//STAGE 10
 	for _, line := range lines {
 		if strings.HasPrefix(line, "Accept-Encoding:") {
 			acceptEncoding = strings.TrimSpace(strings.Split(line, ":")[1])
@@ -63,7 +64,6 @@ func handleConnection(conn net.Conn) {
 		if err != nil {
 			response = "HTTP/1.1 404 Not Found\r\n\r\n"
 		} else {
-			//STAGE 9
 			response = fmt.Sprintf("HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: %d\r\n\r\n%s", len(content), string(content))
 		}
 	} else if method == "POST" && strings.HasPrefix(pathFile, "/files/") {
@@ -75,8 +75,8 @@ func handleConnection(conn net.Conn) {
 		response = "HTTP/1.1 404 Not Found\r\n\r\n"
 	}
 
-	//STAGE 9
-	if acceptEncoding == "gzip" {
+	// STAGE 9
+	if strings.Contains(acceptEncoding, "gzip") {
 		response = strings.Replace(response, "\r\n\r\n", "\r\nContent-Encoding: gzip\r\n\r\n", 1)
 	}
 
