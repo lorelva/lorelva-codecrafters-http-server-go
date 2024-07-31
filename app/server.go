@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"compress/gzip"
 	"fmt"
 	"net"
 	"os"
@@ -43,7 +45,6 @@ func handleConnection(conn net.Conn) {
 	pathFile := strings.Split(lines[0], " ")[1]
 	acceptEncoding := ""
 
-	//STAGE 10
 	for _, line := range lines {
 		if strings.HasPrefix(line, "Accept-Encoding:") {
 			acceptEncoding = strings.TrimSpace(strings.Split(line, ":")[1])
@@ -54,7 +55,21 @@ func handleConnection(conn net.Conn) {
 	if method == "GET" && pathFile == "/" {
 		response = "HTTP/1.1 200 OK\r\n\r\n"
 	} else if method == "GET" && strings.HasPrefix(pathFile, "/echo/") {
-		response = fmt.Sprintf("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: %d\r\n\r\n%s", len(pathFile[6:]), pathFile[6:])
+		content := pathFile[6:]
+		if strings.Contains(acceptEncoding, "gzip") {
+			var buffer bytes.Buffer
+			writer := gzip.NewWriter(&buffer)
+			_, err := writer.Write([]byte(content))
+			if err != nil {
+				fmt.Println("Error writing gzip response: ", err.Error())
+				os.Exit(1)
+			}
+			writer.Close()
+			compressedContent := buffer.Bytes()
+			response = fmt.Sprintf("HTTP/1.1 200 OK\r\nContent-Encoding: gzip\r\nContent-Type: text/plain\r\nContent-Length: %d\r\n\r\n%s", len(compressedContent), string(compressedContent))
+		} else {
+			response = fmt.Sprintf("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: %d\r\n\r\n%s", len(content), content)
+		}
 	} else if method == "GET" && pathFile == "/user-agent" {
 		ua := strings.Split(lines[2], " ")[1]
 		response = fmt.Sprintf("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: %d\r\n\r\n%s", len(ua), ua)
@@ -64,7 +79,20 @@ func handleConnection(conn net.Conn) {
 		if err != nil {
 			response = "HTTP/1.1 404 Not Found\r\n\r\n"
 		} else {
-			response = fmt.Sprintf("HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: %d\r\n\r\n%s", len(content), string(content))
+			if strings.Contains(acceptEncoding, "gzip") {
+				var buffer bytes.Buffer
+				writer := gzip.NewWriter(&buffer)
+				_, err := writer.Write(content)
+				if err != nil {
+					fmt.Println("Error writing gzip response: ", err.Error())
+					os.Exit(1)
+				}
+				writer.Close()
+				compressedContent := buffer.Bytes()
+				response = fmt.Sprintf("HTTP/1.1 200 OK\r\nContent-Encoding: gzip\r\nContent-Type: application/octet-stream\r\nContent-Length: %d\r\n\r\n%s", len(compressedContent), string(compressedContent))
+			} else {
+				response = fmt.Sprintf("HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: %d\r\n\r\n%s", len(content), string(content))
+			}
 		}
 	} else if method == "POST" && strings.HasPrefix(pathFile, "/files/") {
 		content := strings.Trim(lines[len(lines)-1], "\x00")
@@ -73,11 +101,6 @@ func handleConnection(conn net.Conn) {
 		response = "HTTP/1.1 201 Created\r\n\r\n"
 	} else {
 		response = "HTTP/1.1 404 Not Found\r\n\r\n"
-	}
-
-	// STAGE 9
-	if strings.Contains(acceptEncoding, "gzip") {
-		response = strings.Replace(response, "\r\n\r\n", "\r\nContent-Encoding: gzip\r\n\r\n", 1)
 	}
 
 	conn.Write([]byte(response))
