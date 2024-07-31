@@ -6,27 +6,8 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strings"
 )
-
-func main() {
-	fmt.Println("Logs from your program will appear here!")
-
-	l, err := net.Listen("tcp", "0.0.0.0:4221")
-	if err != nil {
-		fmt.Println("Failed to bind to port 4221")
-		os.Exit(1)
-	}
-
-	for {
-		conn, err := l.Accept()
-		if err != nil {
-			fmt.Println("Error accepting connection: ", err.Error())
-			os.Exit(1)
-		}
-		// concurrent
-		go handleConnection(conn)
-	}
-}
 
 func handleConnection(conn net.Conn) {
 	defer conn.Close()
@@ -47,9 +28,39 @@ func handleConnection(conn net.Conn) {
 	} else if path[0:6] == "/echo/" {
 		echo := path[6:]
 		res = fmt.Sprintf("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: %d\r\n\r\n%s", len(echo), echo)
+	} else if strings.Contains(path, "/files/") {
+		dir := os.Args[2]
+		fileName := strings.TrimPrefix(path, "/files/")
+		fmt.Print(fileName)
+		data, err := os.ReadFile(dir + fileName)
+		if err != nil {
+			res = "HTTP/1.1 404 Not Found\r\n\r\n"
+		} else {
+			res = fmt.Sprintf("HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: %d\r\n\r\n%s", len(data), data)
+		}
 	} else {
 		res = "HTTP/1.1 404 Not Found\r\n\r\n"
 	}
 
 	conn.Write([]byte(res))
+}
+
+func main() {
+	fmt.Println("Logs from your program will appear here!")
+
+	l, err := net.Listen("tcp", "0.0.0.0:4221")
+	if err != nil {
+		fmt.Println("Failed to bind to port 4221")
+		os.Exit(1)
+	}
+
+	for {
+		conn, err := l.Accept()
+		if err != nil {
+			fmt.Println("Error accepting connection: ", err.Error())
+			os.Exit(1)
+		}
+		// concurrent
+		go handleConnection(conn)
+	}
 }
