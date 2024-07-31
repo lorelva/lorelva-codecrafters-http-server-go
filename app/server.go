@@ -1,49 +1,12 @@
 package main
 
 import (
-	"bufio"
 	"fmt"
 	"net"
-	"net/http"
 	"os"
+	"path"
 	"strings"
 )
-
-func handleConnection(conn net.Conn) {
-	defer conn.Close()
-	request, err := http.ReadRequest(bufio.NewReader(conn))
-
-	if err != nil {
-		fmt.Println("Error reading request. ", err.Error())
-		return
-	}
-
-	var res string
-	path := request.URL.Path
-
-	if path == "/" {
-		res = "HTTP/1.1 200 OK\r\n\r\n"
-	} else if path == "/user-agent" {
-		res = fmt.Sprintf("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: %d\r\n\r\n%s", len(request.UserAgent()), request.UserAgent())
-	} else if path[0:6] == "/echo/" {
-		echo := path[6:]
-		res = fmt.Sprintf("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: %d\r\n\r\n%s", len(echo), echo)
-	} else if strings.Contains(path, "/files/") {
-		dir := os.Args[2]
-		fileName := strings.TrimPrefix(path, "/files/")
-		fmt.Print(fileName)
-		data, err := os.ReadFile(dir + fileName)
-		if err != nil {
-			res = "HTTP/1.1 404 Not Found\r\n\r\n"
-		} else {
-			res = fmt.Sprintf("HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: %d\r\n\r\n%s", len(data), data)
-		}
-	} else {
-		res = "HTTP/1.1 404 Not Found\r\n\r\n"
-	}
-
-	conn.Write([]byte(res))
-}
 
 func main() {
 	fmt.Println("Logs from your program will appear here!")
@@ -60,7 +23,48 @@ func main() {
 			fmt.Println("Error accepting connection: ", err.Error())
 			os.Exit(1)
 		}
-		// concurrent
+
 		go handleConnection(conn)
 	}
+}
+
+func handleConnection(conn net.Conn) {
+	defer conn.Close()
+	buf := make([]byte, 1024)
+	_, err := conn.Read(buf)
+	if err != nil {
+		fmt.Println("Error handling request: ", err.Error())
+		os.Exit(1)
+	}
+
+	var response string
+	lines := strings.Split(string(buf), "\r\n")
+	method := strings.Split(lines[0], " ")[0]
+	pathFile := strings.Split(lines[0], " ")[1]
+
+	if method == "GET" && pathFile == "/" {
+		response = "HTTP/1.1 200 OK\r\n\r\n"
+	} else if method == "GET" && pathFile[0:6] == "/echo/" {
+		response = fmt.Sprintf("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length:%d\r\n\r\n%s", len(pathFile[6:]), pathFile[6:])
+	} else if method == "GET" && pathFile == "/user-agent" {
+		ua := strings.Split(lines[2], " ")[1]
+		response = fmt.Sprintf("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length:%d\r\n\r\n%s", len(ua), ua)
+	} else if method == "GET" && pathFile[0:7] == "/files/" {
+		dir := os.Args[2]
+		content, err := os.ReadFile(path.Join(dir, pathFile[7:]))
+		if err != nil {
+			response = "HTTP/1.1 404 Not Found\r\n\r\n"
+		} else {
+			response = fmt.Sprintf("HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: %d\r\n\r\n%s", len(content), string(content))
+		}
+	} else if method == "POST" && pathFile[0:7] == "/files/" {
+		content := strings.Trim(lines[len(lines)-1], "\x00")
+		dir := os.Args[2]
+		_ = os.WriteFile(path.Join(dir, pathFile[7:]), []byte(content), 0644)
+		response = "HTTP/1.1 201 Created\r\n\r\n"
+	} else {
+		response = "HTTP/1.1 404 Not Found\r\n\r\n"
+	}
+
+	conn.Write([]byte(response))
 }
